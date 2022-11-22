@@ -1,33 +1,40 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
+interface WsdActivitySettings {
 	mySetting: string;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
+const DEFAULT_SETTINGS: WsdActivitySettings = {
 	mySetting: 'default'
 }
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class WsdActivity extends Plugin {
+	
+	settings: WsdActivitySettings;
+	
+	ribbonIcon: null;
+	statusBarText: null;
 
 	async onload() {
 		await this.loadSettings();
 
 		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
+		this.ribbonIcon = this.addRibbonIcon('dice', 'Activity Tracker', (evt: MouseEvent) => {
+			// @todo: пуск/остановка таймера
+		
 			// Called when the user clicks the icon.
 			new Notice('This is a notice!');
 		});
 		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+		// this.ribbonIcon.addClass('my-plugin-ribbon-class');
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
+		this.statusBarText = this.addStatusBarItem();
+		this.statusBarText.setText('AT: idle');
+		// @todo: в статусбаре выводить состояние текущей операции
+		
+		/*
+		
 		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
 			id: 'open-sample-modal-simple',
@@ -76,10 +83,12 @@ export default class MyPlugin extends Plugin {
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		
+		*/
 	}
 
 	onunload() {
-
+		// @todo: записывать после
 	}
 
 	async loadSettings() {
@@ -90,7 +99,7 @@ export default class MyPlugin extends Plugin {
 		await this.saveData(this.settings);
 	}
 }
-
+/*
 class SampleModal extends Modal {
 	constructor(app: App) {
 		super(app);
@@ -106,11 +115,12 @@ class SampleModal extends Modal {
 		contentEl.empty();
 	}
 }
-
+*/
+/*
 class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+	plugin: WsdActivity;
 
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: WsdActivity) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -135,3 +145,4 @@ class SampleSettingTab extends PluginSettingTab {
 				}));
 	}
 }
+/**/
