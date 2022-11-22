@@ -1,12 +1,7 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting} from 'obsidian';
+import { WsdActivitySettings, DEFAULT_SETTINGS } from './settings.ts' ;
+import {writeLogRecord} from './logger.ts';
 
-interface WsdActivitySettings {
-	mySetting: string;
-}
-
-const DEFAULT_SETTINGS: WsdActivitySettings = {
-	mySetting: 'default'
-}
 
 export default class WsdActivity extends Plugin {
 	
@@ -23,7 +18,19 @@ export default class WsdActivity extends Plugin {
 			// @todo: пуск/остановка таймера
 		
 			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+			new Notice('This is a notice! 111 123');
+			
+			this.statusBarText.setText('AT: clicked');
+			
+			writeLogRecord().catch(error => console.log(error))
+			
+				
+            // yield this.appendFile(file, logText);
+			
+			// access aplication
+			// this.app
+			
+			
 		});
 		// Perform additional things with the ribbon
 		// this.ribbonIcon.addClass('my-plugin-ribbon-class');
@@ -32,6 +39,10 @@ export default class WsdActivity extends Plugin {
 		this.statusBarText = this.addStatusBarItem();
 		this.statusBarText.setText('AT: idle');
 		// @todo: в статусбаре выводить состояние текущей операции
+		
+		
+		
+		
 		
 		/*
 		
@@ -73,7 +84,7 @@ export default class WsdActivity extends Plugin {
 		});
 
 		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new WsdActivitySettingTab(this.app, this));
 
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
@@ -116,33 +127,3 @@ class SampleModal extends Modal {
 	}
 }
 */
-/*
-class SampleSettingTab extends PluginSettingTab {
-	plugin: WsdActivity;
-
-	constructor(app: App, plugin: WsdActivity) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const {containerEl} = this;
-
-		containerEl.empty();
-
-		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
-
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					console.log('Secret: ' + value);
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
-	}
-}
-/**/
