@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting} from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, moment} from 'obsidian';
 import { WsdActivitySettings, DEFAULT_SETTINGS } from './settings.ts' ;
 import {writeLogRecord} from './logger.ts';
 
@@ -9,97 +9,73 @@ export default class WsdActivity extends Plugin {
 	
 	ribbonIcon: null;
 	statusBarText: null;
+	interval: null;
+	lastUpdate: null;
+	
+	writeLogRecord(remainActive: boolean): Promise<void> {
+		this.statusBarText.setText('AT: saving');
+		console.log('Activity log check');
+		return writeLogRecord(this, remainActive)
+			.catch(error => console.log(error))
+			.then(updated => {
+				this.statusBarText.setText(`AT: ${this.interval ? 'rec' : 'idle'}`);
+				if(updated)
+				{
+					this.lastUpdate = moment();
+					new Notice('Activity logged');
+					console.log('Activity logged');
+				}
+			});
+	}
+	
+	play() {
+		if(this.interval) return;
+		this.writeLogRecord(true);
+		this.interval = setInterval(() => {
+			this.writeLogRecord(true);
+		}, 60000);
+		this.lastUpdate = moment();
+		this.registerInterval(this.interval);
+		new Notice('Activity tracker started');
+		console.log('Activity tracker started');
+	}
+	
+	pause() {
+		if(!this.interval) return;
+		clearInterval(this.interval);
+		this.interval = null;
+		this.writeLogRecord(false);
+		new Notice('Activity tracker paused');
+		console.log('Activity tracker paused');
+	}
 
 	async onload() {
 		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		this.ribbonIcon = this.addRibbonIcon('dice', 'Activity Tracker', (evt: MouseEvent) => {
-			// @todo: пуск/остановка таймера
-		
-			// Called when the user clicks the icon.
-			new Notice('This is a notice! 111 123');
-			
-			this.statusBarText.setText('AT: clicked');
-			
-			writeLogRecord().catch(error => console.log(error))
-			
-				
-            // yield this.appendFile(file, logText);
-			
-			// access aplication
-			// this.app
-			
-			
+		this.ribbonIcon = this.addRibbonIcon('clock', 'Activity Tracker', (evt: MouseEvent) => {
+			if(this.interval)
+				this.pause();
+			else
+				this.play();
 		});
-		// Perform additional things with the ribbon
-		// this.ribbonIcon.addClass('my-plugin-ribbon-class');
-
+		
+		this.registerInterval(setInterval(() => {
+			if(!this.interval)
+				return this.statusBarText.setText('AT: idle');
+			if(!this.lastUpdate)
+				return this.statusBarText.setText('AT: set');
+			const d = moment.duration(moment().diff(this.lastUpdate));
+			this.statusBarText.setText(`AT: ${String(d.hours()).padStart(2, "0")}:${String(d.minutes()).padStart(2, "0")}:${String(d.seconds()).padStart(2, "0")}`);
+		}, 1000));
+		
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		this.statusBarText = this.addStatusBarItem();
 		this.statusBarText.setText('AT: idle');
-		// @todo: в статусбаре выводить состояние текущей операции
-		
-		
-		
-		
-		
-		/*
-		
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new WsdActivitySettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-		
-		*/
+		// this.addSettingTab(new WsdActivitySettingTab(this.app, this));
 	}
 
 	onunload() {
-		// @todo: записывать после
+		this.pause();
 	}
 
 	async loadSettings() {
@@ -110,20 +86,3 @@ export default class WsdActivity extends Plugin {
 		await this.saveData(this.settings);
 	}
 }
-/*
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-*/

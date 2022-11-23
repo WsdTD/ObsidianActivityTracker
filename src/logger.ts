@@ -5,7 +5,7 @@ import {TrackerException} from './exception.ts';
 
 const sectionLabel = 'activity tracker';
 const activitySectionRegex = new RegExp(`<!-- ${sectionLabel} -->(.+?)<!-- \\/${sectionLabel} -->`, 'gmus');
-const sectionParseRegex = /^(?<tasks>.*?)(<!-- log -->(?<log>.*?))?(<!-- report -->(?<report>.*))?$/us;
+const sectionParseRegex = /^(?<tasks>.*?)(<!-- report -->(?<report>.*?))?(<!-- log -->(?<log>.*?))?$/us;
 const taskParseRegex = /^(?<spaces>\s*)[\*\-]\s+\[(?<check>.)\](?<label>.*)$/ugm;
 const logParseRegex = /^-(?<tasks>.*?;+)\s*(?<starttime>\d\d:\d\d)(-(?<endtime>\d\d:\d\d))?;(?<length>.*)$/ugm;
 
@@ -20,7 +20,7 @@ function parseTasks(text: string) {
 		};
 		item.fullname = item.label;
 		if(item.level > 0)
-			for(let i = list.length - 1; i >= 0; i++)
+			for(let i = list.length - 1; i >= 0; i--)
 				if(list[i].level < item.level)
 				{
 					item.fullname = list[i].fullname + '->' + item.label;
@@ -45,7 +45,6 @@ function parseLog(text: string) {
 			tasks: line.groups.tasks.split(';').map(v => v.trim()).filter(v => v),
 			start: line.groups.starttime,
 			end: line.groups.endtime || null,
-			length: line.groups.length || null,
 		});
 	}
 	return list;
@@ -54,20 +53,22 @@ function parseLog(text: string) {
 function stringifyLog(list: object): string {
 	let ret = [];
 	for(let line of list)
-		ret.push(`- ${line.tasks.join('; ')}; ${line.start}${line.end ? ('-'+line.end) : ''};${line.duration || ''}`);
+	{
+		let duration = '';
+		if(line.end)
+		{
+			let start = moment(line.start, "HH:mm");
+			let end = moment(line.end, "HH:mm");
+			if(start.isSame(end)) continue;
+			if(start.isAfter(end)) start.substract(24*60*60*1000);
+			duration = ' ' + moment.duration(end.diff(start)).humanize();
+		}
+		ret.push(`- ${line.tasks.join('; ')}; ${line.start}${line.end ? ('-'+line.end) : ''};${duration}`);
+	}
 	return ret.join("\n");
 }
-function parseSection(text: string) : object|false {
-	parts = sectionParseRegex.exec(text);
-	if(!parts) return false;
-	return {
-		tasks: parseTasks(parts.groups.tasks),
-		log: parts.groups.log ? parseLog(parts.groups.log) : null,
-		report: parts.groups.report || null,
-	};
-}
 
-function generateReport(log: object, tasks: object) : string {
+function generateReport(log: object, tasks: object) : string|false {
 	
 	let tasksTime = {};
 	for(let line of log)
@@ -97,15 +98,67 @@ function generateReport(log: object, tasks: object) : string {
 		ret.push(`${task} | ${moment.duration(time).humanize()}`)
 	}
 	
+	if(ret.length === 0) return false;
+	
 	return `task | duration\n-- | --\n${ret.join("\n")}`;
 }
 
+function parseSection(text: string) : object|false {
+	parts = sectionParseRegex.exec(text);
+	if(!parts) return false;
+	return {
+		tasks: parseTasks(parts.groups.tasks),
+		log: parts.groups.log ? parseLog(parts.groups.log) : [],
+		report: parts.groups.report || null,
+	};
+}
 function stringifySection(section: object): string {
 	let ret = stringifyTasks(section.tasks);
 	if(!section.log) return ret;
-	ret += `\n\n<!-- log -->\n${stringifyLog(section.log)}`;
-	ret += `\n\n<!-- report -->\n${generateReport(section.log, section.tasks)}`;
+	const log = stringifyLog(section.log);
+	const report = generateReport(section.log, section.tasks);
+	if(report)
+		ret += `\n\n<!-- report -->\n${report}`;
+	if(log)
+		ret += `\n\n<!-- log -->\n${log}`;
 	return ret;
+}
+
+
+function isLoggingNeeded(section, currentMoment, remainActive)
+{
+	// если логов вообще нет - надо создать первую не закрытую запись
+	if(!section.log || section.log.length === 0) return 1;
+	
+	let activeLog = section.log[section.log.length - 1];
+	
+	// если последняя запись не активная - надо создать новую не закрытую запись
+	if(activeLog.end && remainActive) return 2;
+	
+	// если последняя запись открыта и не надо оставаться активным
+	if(!activeLog.end && !remainActive) return 3;
+	
+	
+	if(remainActive)
+	{
+		// проверяем совпадают ли таски
+		const activeTasks = section.tasks.filter(v => v.checked).map(v => v.fullname);
+		
+		//размер
+		if(activeTasks.length !== activeLog.tasks.length) return 4;
+		
+		// сравниваем сами таски
+		for(let i = 0; i < activeTasks.length; i++)
+			if(activeTasks[i] !== activeLog.tasks[i])
+				return 5;
+			
+		// если последнее логирование было больше часа назад
+		if(moment.duration(currentMoment.diff(moment(activeLog.start, "HH:mm"))).asHours() >= 1)
+			return 6;
+	}
+	
+	// если ни одно условие не прошло - сообщаем, что не надо ничего менять
+	return false;
 }
 
 /**
@@ -113,36 +166,39 @@ function stringifySection(section: object): string {
  * получает старый текст секции
  * возвращает новый, с добавленной записью лога
  **/
-function updateActivitySection(text: string): string|false {
+function updateActivitySection(text: string, remainActive: boolean): string|false {
 	let section = parseSection(text);
-	
-	// @todo: проверять вообще надо ли писать новую запись лога
-	// сверять таски с галочками и таски из активной записи лога
-	// смотреть на время старта активной записи лога
-	
 	const now = moment();
-	if(section.log && section.log.length > 0)
+	
+	// проверяем надо ли писать новую запись лога
+	
+	const test = isLoggingNeeded(section, now, remainActive);
+	
+	console.log('isLoggingNeeded', test);
+	
+	if(!test) return false;
+	
+	// сохраняем предыдущую запись (если она есть и открыта)
+	if(section.log.length > 0 && !section.log[section.log.length - 1].end)
 	{
 		let activeLog = section.log.pop();
 		activeLog.end = now.format("HH:mm");
 		const start = moment(activeLog.start, "HH:mm");
 		if(start.isAfter(now)) // на случай полночи
 			start.substract(24*60*60*1000);
-		activeLog.duration = `${Math.floor((now - start) / 60000 + 0.5)} minutes`; // @todo: hours etc
 		section.log.push(activeLog);
 	}
-	else
-	{
-		section.log = [];
-	}
 
-	// starting new section
-	section.log.push({
-		tasks: section.tasks.filter(v => v.checked).map(v => v.fullname),
-		start: now.format("HH:mm"),
-		end: false,
-		duration: false,
-	});
+	if(remainActive)
+	{
+		// starting new section
+		const activeTasks = section.tasks.filter(v => v.checked).map(v => v.fullname);
+		section.log.push({
+			tasks: activeTasks,
+			start: now.format("HH:mm"),
+			end: false,
+		});
+	}
 	
 	return stringifySection(section);
 }
@@ -154,18 +210,35 @@ function getLoggingFile(): Promise<TFile> {
 	return createDailyNote(moment());
 }
 
+
+function waitForFileToBeClean(plugin, path): Promise<void> {
+	let ps = []
+	plugin.app.workspace.iterateAllLeaves(leaf => {
+		if(!leaf.view) return;
+		if(!leaf.view._loaded) return;
+		if(!leaf.view.file) return;
+		if(!leaf.view.save) return;
+		if(!leaf.view.dirty) return;
+		ps.push(leaf.view.save())
+		console.log('waiting for file to become clean for writing:', leaf.view.file.path);
+	});
+	return Promise.all(ps);
+}
+
 /**
+ * проверить нужно ли логирование, если да, то
  * логировать текущий таймер, начать новый
- * вызывать когда надо добавить новую запись в лог
  */
-export function writeLogRecord(): Promise<void> {
+// @todo: что с пролемой полночи?
+export function writeLogRecord(plugin, remainActive): Promise<void> {
 	return getLoggingFile()
-		.then(file => this.app.vault.adapter.read(file.path).then(c => ({file: file, content: c})))
+		.then(file => waitForFileToBeClean(plugin, file.path).then(() => file))
+		.then(file => plugin.app.vault.adapter.read(file.path).then(c => ({file: file, content: c})))
 		.then(data => {
 			let updatedContent = data.content;
 			let updatedSectionsCount = 0;
 			while((section = activitySectionRegex.exec(data.content)) !== null) {
-				const updated = updateActivitySection(section[1]);
+				const updated = updateActivitySection(section[1], remainActive);
 				if(updated)
 				{
 					updatedContent = updatedContent.replace(section[0], `<!-- activity tracker -->\n${updated}\n<!-- /activity tracker -->`);
@@ -173,12 +246,20 @@ export function writeLogRecord(): Promise<void> {
 				}
 			}
 			
-			if(updatedSectionsCount === 0)
-				throw new TrackerException('no tracker sections updated')
+			if(updatedSectionsCount > 0)
+				data.updatedContent = updatedContent;
+			else
+				data.updatedContent = null;
 			
-			data.updatedContent = updatedContent;
+			data.updatedSectionsCount = updatedSectionsCount;
 			return data;
 		})
-		.then(data => this.app.vault.adapter.write(data.file.path, data.updatedContent))
+		.then(data => {
+			if(data.updatedContent)
+				return waitForFileToBeClean(plugin, data.file.path)
+					.then(() => plugin.app.vault.adapter.write(data.file.path, data.updatedContent))
+					.then(() => true);
+			return false;
+		})
 		;
 }
