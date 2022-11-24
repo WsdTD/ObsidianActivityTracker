@@ -2,131 +2,12 @@ import {moment} from 'obsidian';
 import type { Moment } from 'moment';
 import { getDailyNote, createDailyNote, getAllDailyNotes, appHasDailyNotesPluginLoaded } from 'obsidian-daily-notes-interface';
 import {TrackerException} from './exception.ts';
+import {section as sectionParser, activitySections as activitySectionsParser} from './parsers.ts';
 
-const sectionLabel = 'activity tracker';
-const activitySectionRegex = new RegExp(`<!-- ${sectionLabel} -->(.+?)<!-- \\/${sectionLabel} -->`, 'gmus');
-const sectionParseRegex = /^(?<tasks>.*?)(<!-- report -->(?<report>.*?))?(<!-- log -->(?<log>.*?))?$/us;
-const taskParseRegex = /^(?<spaces>\s*)[\*\-]\s+\[(?<check>.)\](?<label>.*)$/ugm;
-const logParseRegex = /^-(?<tasks>.*?;+)\s*(?<starttime>\d\d:\d\d)(-(?<endtime>\d\d:\d\d))?;(?<length>.*)$/ugm;
+activitySectionsParser.init('activity tracker');
 
-function parseTasks(text: string) {
-	let list = [];
-	while((line = taskParseRegex.exec(text.trim())) !== null) {
-		let spaces = line.groups.spaces.replace(/ {4}/g, '\t').replace(/ +/g, '\t');
-		let item = {
-			checked: line.groups.check !== ' ',
-			label: line.groups.label.trim(),
-			level: spaces.length,
-		};
-		item.fullname = item.label;
-		if(item.level > 0)
-			for(let i = list.length - 1; i >= 0; i--)
-				if(list[i].level < item.level)
-				{
-					item.fullname = list[i].fullname + '->' + item.label;
-					break;
-				}
-		list.push(item);
-	}
-	return list;
-}
-
-function stringifyTasks(list: object) : string {
-	let ret = [];
-	for(let line of list)
-		ret.push(`${"\t".repeat(line.level)}- [${line.checked ? 'x' : ' '}] ${line.label}`);
-	return ret.join("\n");
-}
-
-function parseLog(text: string) {
-	let list = [];
-	while((line = logParseRegex.exec(text)) !== null) {
-		list.push({
-			tasks: line.groups.tasks.split(';').map(v => v.trim()).filter(v => v),
-			start: line.groups.starttime,
-			end: line.groups.endtime || null,
-		});
-	}
-	return list;
-}
-
-function stringifyLog(list: object): string {
-	let ret = [];
-	for(let line of list)
-	{
-		let duration = '';
-		if(line.end)
-		{
-			let start = moment(line.start, "HH:mm");
-			let end = moment(line.end, "HH:mm");
-			if(start.isSame(end)) continue;
-			if(start.isAfter(end)) start.substract(24*60*60*1000);
-			duration = ' ' + moment.duration(end.diff(start)).humanize();
-		}
-		ret.push(`- ${line.tasks.join('; ')}; ${line.start}${line.end ? ('-'+line.end) : ''};${duration}`);
-	}
-	return ret.join("\n");
-}
-
-function generateReport(log: object, tasks: object) : string|false {
+function isLoggingNeeded(section, currentMoment, remainActive) {
 	
-	let tasksTime = {};
-	for(let line of log)
-	{
-		if(!line.end) continue;
-		if(line.tasks.length < 1) continue;
-		let start = moment(line.start, "HH:mm");
-		let end = moment(line.end, "HH:mm");
-		if(start.isAfter(end)) start.substract(24*60*60*1000);
-		let length = end - start;
-		if(line.tasks.length > 0)
-			length /= line.tasks.length;
-		for(let task of line.tasks)
-		{
-			if(!tasksTime[task]) tasksTime[task] = 0;
-			tasksTime[task] += length;
-		}
-	}
-	
-	let keys = tasks.concat(Object.keys(tasksTime)).filter((v, i, o) => o.indexOf(v) === i);
-	
-	let ret = [];
-	for(let task of keys)
-	{
-		let time = tasksTime[task];
-		if(!time) continue;
-		ret.push(`${task} | ${moment.duration(time).humanize()}`)
-	}
-	
-	if(ret.length === 0) return false;
-	
-	return `task | duration\n-- | --\n${ret.join("\n")}`;
-}
-
-function parseSection(text: string) : object|false {
-	parts = sectionParseRegex.exec(text);
-	if(!parts) return false;
-	return {
-		tasks: parseTasks(parts.groups.tasks),
-		log: parts.groups.log ? parseLog(parts.groups.log) : [],
-		report: parts.groups.report || null,
-	};
-}
-function stringifySection(section: object): string {
-	let ret = stringifyTasks(section.tasks);
-	if(!section.log) return ret;
-	const log = stringifyLog(section.log);
-	const report = generateReport(section.log, section.tasks);
-	if(report)
-		ret += `\n\n<!-- report -->\n${report}`;
-	if(log)
-		ret += `\n\n<!-- log -->\n${log}`;
-	return ret;
-}
-
-
-function isLoggingNeeded(section, currentMoment, remainActive)
-{
 	// если логов вообще нет - надо создать первую не закрытую запись
 	if(!section.log || section.log.length === 0) return 1;
 	
@@ -167,16 +48,16 @@ function isLoggingNeeded(section, currentMoment, remainActive)
  * возвращает новый, с добавленной записью лога
  **/
 function updateActivitySection(text: string, remainActive: boolean): string|false {
-	let section = parseSection(text);
+	let section = sectionParser.parse(text);
 	const now = moment();
 	
 	// проверяем надо ли писать новую запись лога
 	
-	const test = isLoggingNeeded(section, now, remainActive);
+	const check = isLoggingNeeded(section, now, remainActive);
 	
-	console.log('isLoggingNeeded', test);
+	console.log('isLoggingNeeded', check);
 	
-	if(!test) return false;
+	if(!check) return false;
 	
 	// сохраняем предыдущую запись (если она есть и открыта)
 	if(section.log.length > 0 && !section.log[section.log.length - 1].end)
@@ -200,7 +81,7 @@ function updateActivitySection(text: string, remainActive: boolean): string|fals
 		});
 	}
 	
-	return stringifySection(section);
+	return sectionParser.stringify(section);
 }
 
 function getLoggingFile(): Promise<TFile> {
@@ -237,11 +118,15 @@ export function writeLogRecord(plugin, remainActive): Promise<void> {
 		.then(data => {
 			let updatedContent = data.content;
 			let updatedSectionsCount = 0;
-			while((section = activitySectionRegex.exec(data.content)) !== null) {
-				const updated = updateActivitySection(section[1], remainActive);
+			
+			let sections = activitySectionsParser.parseDocument(data.content);
+			if(sections)
+			for(let section of sections)
+			{
+				const updated = updateActivitySection(section.inner, remainActive);
 				if(updated)
 				{
-					updatedContent = updatedContent.replace(section[0], `<!-- activity tracker -->\n${updated}\n<!-- /activity tracker -->`);
+					updatedContent = updatedContent.replace(section.outer, activitySectionsParser.wrapSection(updated));
 					updatedSectionsCount++;
 				}
 			}
