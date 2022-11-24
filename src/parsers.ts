@@ -30,7 +30,7 @@ export const tasks = {
 	},
 };
 export const log = {
-	regex: /^-(?<tasks>.*?;+)\s*(?<starttime>\d\d:\d\d)(-(?<endtime>\d\d:\d\d))?;(?<length>.*)$/ugm,
+	regex: /^-\s*(?<starttime>\d\d:\d\d)(-(?<endtime>\d\d:\d\d).*?)?;(?<tasks>.*)$/gmu,
 	parse: function(text: string) {
 		let list = [];
 		while((line = this.regex.exec(text)) !== null) {
@@ -47,15 +47,18 @@ export const log = {
 		for(let line of list)
 		{
 			let duration = '';
+			let string = `- ${line.start}`;
 			if(line.end)
 			{
 				let start = moment(line.start, "HH:mm");
 				let end = moment(line.end, "HH:mm");
 				if(start.isSame(end)) continue;
 				if(start.isAfter(end)) start.substract(24*60*60*1000);
-				duration = ' ' + moment.duration(end.diff(start)).humanize();
+				duration = moment.duration(end.diff(start)).humanize();
+				string += `-${line.end} (${duration})`;
 			}
-			ret.unshift(`- ${line.tasks.join('; ')}; ${line.start}${line.end ? ('-'+line.end) : ''};${duration}`);
+			string += `; ${line.tasks.join('; ')}`;
+			ret.unshift(string);
 		}
 		return ret.join("\n");
 	},
