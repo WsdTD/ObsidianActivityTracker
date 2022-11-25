@@ -1,23 +1,22 @@
 import {moment} from 'obsidian';
 import type { Moment } from 'moment';
-import { getDailyNote, createDailyNote, getAllDailyNotes, appHasDailyNotesPluginLoaded } from 'obsidian-daily-notes-interface';
 import {TrackerException} from './exception.ts';
 import {section as sectionParser, activitySections as activitySectionsParser} from './parsers.ts';
 
 activitySectionsParser.init('activity tracker');
 
-function isLoggingNeeded(section, currentMoment, remainActive) {
+function isLoggingNeeded(section, currentMoment, remainActive, settings) {
 	
 	// если логов вообще нет - надо создать первую не закрытую запись
-	if(!section.log || section.log.length === 0) return 1;
+	if(!section.log || section.log.length === 0) return true;
 	
 	let activeLog = section.log[section.log.length - 1];
 	
 	// если последняя запись не активная - надо создать новую не закрытую запись
-	if(activeLog.end && remainActive) return 2;
+	if(activeLog.end && remainActive) return true;
 	
 	// если последняя запись открыта и не надо оставаться активным
-	if(!activeLog.end && !remainActive) return 3;
+	if(!activeLog.end && !remainActive) return true;
 	
 	
 	if(remainActive)
@@ -26,16 +25,16 @@ function isLoggingNeeded(section, currentMoment, remainActive) {
 		const activeTasks = section.tasks.filter(v => v.checked).map(v => v.fullname);
 		
 		//размер
-		if(activeTasks.length !== activeLog.tasks.length) return 4;
+		if(activeTasks.length !== activeLog.tasks.length) return true;
 		
 		// сравниваем сами таски
 		for(let i = 0; i < activeTasks.length; i++)
 			if(activeTasks[i] !== activeLog.tasks[i])
-				return 5;
+				return true;
 			
 		// если последнее логирование было больше часа назад
-		if(moment.duration(currentMoment.diff(moment(activeLog.start, "HH:mm"))).asHours() >= 1)
-			return 6;
+		if(moment.duration(currentMoment.diff(moment(activeLog.start, "HH:mm"))).asMinutes() >= settings.maxInterval)
+			return true;
 	}
 	
 	// если ни одно условие не прошло - сообщаем, что не надо ничего менять
@@ -47,17 +46,13 @@ function isLoggingNeeded(section, currentMoment, remainActive) {
  * получает старый текст секции
  * возвращает новый, с добавленной записью лога
  **/
-function updateActivitySection(text: string, remainActive: boolean): string|false {
+function updateActivitySection(text: string, remainActive: boolean, settings): string|false {
 	let section = sectionParser.parse(text);
 	const now = moment();
 	
 	// проверяем надо ли писать новую запись лога
-	
-	const check = isLoggingNeeded(section, now, remainActive);
-	
-	console.log('isLoggingNeeded', check);
-	
-	if(!check) return false;
+	if(!isLoggingNeeded(section, now, remainActive, settings))
+		return false;
 	
 	// сохраняем предыдущую запись (если она есть и открыта)
 	if(section.log.length > 0 && !section.log[section.log.length - 1].end)
@@ -67,13 +62,24 @@ function updateActivitySection(text: string, remainActive: boolean): string|fals
 		const start = moment(activeLog.start, "HH:mm");
 		if(start.isAfter(now)) // на случай полночи
 			start.substract(24*60*60*1000);
-		section.log.push(activeLog);
+		
+		let duration = moment.duration(now.diff(start)).asMinutes();
+		
+		// если интервал слишком большой, то сокращать его до максимально допустимого 
+		if(duration > settings.maxInterval)
+			duration = settings.maxInterval;
+		
+		//не логировать если активность была слишком короткой
+		if(duration >= settings.minInterval)
+			section.log.push(activeLog);
 	}
 
 	if(remainActive)
 	{
 		// starting new section
 		const activeTasks = section.tasks.filter(v => v.checked).map(v => v.fullname);
+		if(activeTasks.length === 0)
+			activeTasks.push("ничего не выбрано");
 		section.log.push({
 			tasks: activeTasks,
 			start: now.format("HH:mm"),
@@ -84,17 +90,9 @@ function updateActivitySection(text: string, remainActive: boolean): string|fals
 	return sectionParser.stringify(section);
 }
 
-function getLoggingFile(): Promise<TFile> {
-	if(!appHasDailyNotesPluginLoaded()) return Promise.reject("daily notes plugin is not enabled");
-	const file = getDailyNote(moment(), getAllDailyNotes());
-	if(file) return Promise.resolve(file);
-	return createDailyNote(moment());
-}
-
-
-function waitForFileToBeClean(plugin, path): Promise<void> {
+function waitForFileToBeClean(app, path): Promise<void> {
 	let ps = []
-	plugin.app.workspace.iterateAllLeaves(leaf => {
+	app.workspace.iterateAllLeaves(leaf => {
 		if(!leaf.view) return;
 		if(!leaf.view._loaded) return;
 		if(!leaf.view.file) return;
@@ -110,41 +108,33 @@ function waitForFileToBeClean(plugin, path): Promise<void> {
  * проверить нужно ли логирование, если да, то
  * логировать текущий таймер, начать новый
  */
-// @todo: что с пролемой полночи?
-export function writeLogRecord(plugin, remainActive): Promise<void> {
-	return getLoggingFile()
-		.then(file => waitForFileToBeClean(plugin, file.path).then(() => file))
-		.then(file => plugin.app.vault.adapter.read(file.path).then(c => ({file: file, content: c})))
-		.then(data => {
-			let updatedContent = data.content;
+export function processLogRecordsInFile(app, file, remainActive, settings): Promise<void> {
+	return waitForFileToBeClean(app, file.path)
+		.then(() => app.vault.adapter.read(file.path))
+		.then(content => {
 			let updatedSectionsCount = 0;
 			
-			let sections = activitySectionsParser.parseDocument(data.content);
+			let sections = activitySectionsParser.parseDocument(content);
 			if(sections)
 			for(let section of sections)
 			{
-				const updated = updateActivitySection(section.inner, remainActive);
+				const updated = updateActivitySection(section.inner, remainActive, settings);
 				if(updated)
 				{
-					updatedContent = updatedContent.replace(section.outer, activitySectionsParser.wrapSection(updated));
+					content = content.replace(section.outer, activitySectionsParser.wrapSection(updated));
 					updatedSectionsCount++;
 				}
 			}
 			
 			if(updatedSectionsCount > 0)
-				data.updatedContent = updatedContent;
-			else
-				data.updatedContent = null;
+				return content;
 			
-			data.updatedSectionsCount = updatedSectionsCount;
-			return data;
+			return null;
 		})
-		.then(data => {
-			if(data.updatedContent)
-				return waitForFileToBeClean(plugin, data.file.path)
-					.then(() => plugin.app.vault.adapter.write(data.file.path, data.updatedContent))
+		.then(content => {
+			if(content)
+				return app.vault.adapter.write(file.path, content)
 					.then(() => true);
 			return false;
 		})
-		;
 }

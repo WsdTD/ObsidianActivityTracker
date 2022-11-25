@@ -7,7 +7,7 @@ export const tasks = {
 			let spaces = line.groups.spaces.replace(/ {4}/g, '\t').replace(/ +/g, '\t');
 			let item = {
 				checked: line.groups.check !== ' ',
-				label: line.groups.label.trim(),
+				label: line.groups.label.trim().replace(/;/g, '.,'),
 				level: spaces.length,
 			};
 			item.fullname = item.label;
