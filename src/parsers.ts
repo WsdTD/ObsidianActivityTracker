@@ -1,3 +1,4 @@
+import {moment} from 'obsidian';
 
 export const tasks = {
 	regex: /^(?<spaces>\s*)[\*\-]\s+\[(?<check>.)\](?<label>.*)$/ugm,
@@ -64,7 +65,19 @@ export const log = {
 	},
 };
 export const report = {
-	generate: function(log: object, tasks: object) : string|false {
+	
+	timeString(v:integer) {
+		if(v > 9) return String(v);
+		return `0${v}`;
+	},
+	
+	reportLine: function(label, time) {
+		const d = moment.duration(time);
+		return `| ${label} | ${d.humanize()} | ${this.timeString(d.hours())}:${this.timeString(d.minutes())} |`
+	},
+	
+	generate: function(log: object) : string|false {
+				
 		let tasksTime = {};
 		let total = 0;
 		for(let line of log)
@@ -85,21 +98,15 @@ export const report = {
 			}
 		}
 		
-		let keys = tasks.concat(Object.keys(tasksTime)).filter((v, i, o) => o.indexOf(v) === i);
+		if(total === 0) return false;
 		
-		let ret = [];
-		for(let task of keys)
-		{
-			let time = tasksTime[task];
-			if(!time) continue;
-			ret.push(`| ${task} | ${moment.duration(time).humanize()} |`);
-		}
+		let ret = Object.entries(tasksTime)
+			.sort((a,b) => b[1] - a[1])
+			.map(t => this.reportLine(t[0], t[1]))
+			
+		ret.push(this.reportLine('', total))
 		
-		if(ret.length === 0) return false;
-		
-		ret.push(`| | ${moment.duration(total).humanize()} |`);
-		
-		return `| task | duration |\n| -- | -- |\n${ret.join("\n")}`;
+		return `| task | aprox | exact |\n| -- | -- | -- |\n${ret.join("\n")}`;
 	},
 };
 export const section = {
@@ -117,7 +124,7 @@ export const section = {
 		let ret = tasks.stringify(section.tasks);
 		if(!section.log) return ret;
 		const logText = log.stringify(section.log);
-		const reportText = report.generate(section.log, section.tasks);
+		const reportText = report.generate(section.log);
 		if(reportText)
 			ret += `\n\n<!-- report -->\n${reportText}`;
 		if(logText)
@@ -131,6 +138,9 @@ export const activitySections = {
 	init: function(marker) {
 		this.marker = marker;
 		this.regex = new RegExp(`<!-- ${this.marker} -->(.+?)<!-- \\/${this.marker} -->`, 'gmus');
+	},
+	initialized: function() {
+		return this.marker && this.regex;
 	},
 	parseDocument: function(contents:string): object|false {
 		if(!this.regex) return false;

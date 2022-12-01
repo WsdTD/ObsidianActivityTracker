@@ -8,6 +8,7 @@ export interface WsdActivitySettings {
 	longBreak: number;
 	longBreakInterval: number;
 	autostartTimer: boolean;
+	trackerLabel: string;
 }
 
 export const DEFAULT_SETTINGS: WsdActivitySettings = {
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS: WsdActivitySettings = {
 	longBreak: 20,
 	longBreakInterval: 4,
 	autostartTimer: false,
+	trackerLabel: "activity tracker",
 }
 
 
@@ -94,5 +96,27 @@ export class WsdActivitySettingTab extends PluginSettingTab {
 			// name: 'Long break interval',
 			// desc: "Number of full intervals before a long break",
 		// });
+		
+		
+		
+		new Setting(containerEl)
+			.setName("Section Marker")
+			.setDesc("This text as a part of HTML comment will mark the main secrion of tracker")
+			.addText(input => input
+				.setValue(String(this.plugin.settings.trackerLabel))
+				.onChange(value => {
+					value = String(value).trim();
+					if(value.length > 0)
+					{
+						this.plugin.settings.trackerLabel = value;
+					}
+					else
+					{
+						new Notice("Please specify a valid non empty string.");
+						this.plugin.settings.trackerLabel = DEFAULT_SETTINGS.trackerLabel;
+					}
+					this.plugin.saveSettings();
+				})
+			);
 	}
 }

@@ -40,7 +40,8 @@ export default class WsdActivity extends Plugin {
 		if(this.interval) return;
 		
 		getDailyNoteFile().then(file => {
-			this.currentFile = file;
+			console.log("now writing activity log into", file.path)
+			this.currentFile = file ? file.path : null;
 			this.writeLogRecord(true);
 			this.interval = setInterval(() => {
 				this.writeLogRecord(true);

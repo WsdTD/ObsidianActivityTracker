@@ -3,7 +3,7 @@ import type { Moment } from 'moment';
 import {TrackerException} from './exception.ts';
 import {section as sectionParser, activitySections as activitySectionsParser} from './parsers.ts';
 
-activitySectionsParser.init('activity tracker');
+
 
 function isLoggingNeeded(section, currentMoment, remainActive, settings) {
 	
@@ -63,14 +63,14 @@ function updateActivitySection(text: string, remainActive: boolean, settings): s
 		if(start.isAfter(now)) // на случай полночи
 			start.substract(24*60*60*1000);
 		
-		let duration = moment.duration(now.diff(start)).asMinutes();
+		let durationMinutes = moment.duration(now.diff(start)).asMinutes();
 		
 		// если интервал слишком большой, то сокращать его до максимально допустимого 
-		if(duration > settings.maxInterval)
-			duration = settings.maxInterval;
+		if(durationMinutes > settings.maxInterval)
+			activeLog.end = start.clone().add(settings.maxInterval * 60*1000).format("HH:mm");
 		
 		//не логировать если активность была слишком короткой
-		if(duration >= settings.minInterval)
+		if(durationMinutes >= settings.minInterval)
 			section.log.push(activeLog);
 	}
 
@@ -108,9 +108,13 @@ function waitForFileToBeClean(app, path): Promise<void> {
  * проверить нужно ли логирование, если да, то
  * логировать текущий таймер, начать новый
  */
-export function processLogRecordsInFile(app, file, remainActive, settings): Promise<void> {
-	return waitForFileToBeClean(app, file.path)
-		.then(() => app.vault.adapter.read(file.path))
+export function processLogRecordsInFile(app, filePath, remainActive, settings): Promise<void> {
+	
+	if(!activitySectionsParser.initialized())
+		activitySectionsParser.init(settings.trackerLabel);
+	
+	return waitForFileToBeClean(app, filePath)
+		.then(() => app.vault.adapter.read(filePath))
 		.then(content => {
 			let updatedSectionsCount = 0;
 			
@@ -133,7 +137,7 @@ export function processLogRecordsInFile(app, file, remainActive, settings): Prom
 		})
 		.then(content => {
 			if(content)
-				return app.vault.adapter.write(file.path, content)
+				return app.vault.adapter.write(filePath, content)
 					.then(() => true);
 			return false;
 		})
