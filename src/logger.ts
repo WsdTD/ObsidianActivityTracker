@@ -61,7 +61,7 @@ function updateActivitySection(text: string, remainActive: boolean, settings): s
 		activeLog.end = now.format("HH:mm");
 		const start = moment(activeLog.start, "HH:mm");
 		if(start.isAfter(now)) // на случай полночи
-			start.substract(24*60*60*1000);
+			start.subtract(24*60*60*1000);
 		
 		let durationMinutes = moment.duration(now.diff(start)).asMinutes();
 		
