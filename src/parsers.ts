@@ -135,6 +135,7 @@ export const section = {
 export const activitySections = {
 	marker: null,
 	regex: null,
+	abruptRegex: /<!-- abrupt exit (\d\d:\d\d)\s*-->/gmus,
 	attrRegex: /(\w+)=(\S+)/gs,
 	init: function(marker) {
 		this.marker = marker;
@@ -180,6 +181,19 @@ export const activitySections = {
 	stringify: function(section) {
 		if(!this.marker) return false;
 		let ret = `<!-- ${this.marker} ${section.attrText}-->\n${section.inner}\n<!-- /${this.marker} -->`;
+		return ret;
+	},
+	parseAbruptExitMarks: function(contents:string): object|false {
+		if(!this.abruptRegex) return false;
+		let m;
+		let ret = [];
+		while((m = this.abruptRegex.exec(contents)) !== null) {
+			ret.push({
+				outer: m[0],
+				time: moment(m[1], "HH:mm"),
+			});
+		}
+		if(ret.length === 0) return false;
 		return ret;
 	},
 };

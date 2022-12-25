@@ -42,7 +42,7 @@ export default class WsdActivity extends Plugin {
 		getDailyNoteFile().then(file => {
 			console.log("now writing activity log into", file.path)
 			this.currentFile = file ? file.path : null;
-			this.writeLogRecord(true);
+			const ret = this.writeLogRecord(true);
 			this.interval = setInterval(() => {
 				this.writeLogRecord(true);
 			}, 60000);
@@ -50,6 +50,7 @@ export default class WsdActivity extends Plugin {
 			this.registerInterval(this.interval);
 			new Notice('Activity tracker started');
 			console.log('Activity tracker started');
+			return ret;
 		});
 	}
 	
@@ -57,10 +58,11 @@ export default class WsdActivity extends Plugin {
 		if(!this.interval) return;
 		clearInterval(this.interval);
 		this.interval = null;
-		this.writeLogRecord(false);
+		const ret = this.writeLogRecord(false);
 		this.currentFile = null;
-		new Notice('Activity tracker paused');
-		console.log('Activity tracker paused');
+		new Notice('Activity tracker stopped');
+		console.log('Activity tracker stopped');
+		return ret;
 	}
 
 	onload() {
@@ -90,12 +92,18 @@ export default class WsdActivity extends Plugin {
 			if(this.settings.autostartTimer)
 				setTimeout(() => this.play(), 1000);
 			
-			this.registerEvent(app.on('quit', () => { this.pause(); }));
+			this.registerEvent(app.on('quit', () => {
+				if(this.currentFile && this.interval)
+				{
+					console.log("attempting to write an abrupt exit time");
+					return this.app.vault.adapter.append(this.currentFile, `\n<!-- abrupt exit ${moment().format('HH:mm')} -->`);
+				}
+			}));
 		});
 	}
 
 	onunload() {
-		this.pause();
+		return this.pause();
 	}
 
 	loadSettings() {
