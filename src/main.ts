@@ -89,6 +89,8 @@ export default class WsdActivity extends Plugin {
 			
 			if(this.settings.autostartTimer)
 				setTimeout(() => this.play(), 1000);
+			
+			this.registerEvent(app.on('quit', () => { this.pause(); }));
 		});
 	}
 

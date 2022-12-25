@@ -54,7 +54,7 @@ export const log = {
 				let start = moment(line.start, "HH:mm");
 				let end = moment(line.end, "HH:mm");
 				if(start.isSame(end)) continue;
-				if(start.isAfter(end)) start.substract(24*60*60*1000);
+				if(start.isAfter(end)) start.subtract(24*60*60*1000);
 				duration = moment.duration(end.diff(start)).humanize();
 				string += `-${line.end} (${duration})`;
 			}
@@ -86,7 +86,7 @@ export const report = {
 			if(line.tasks.length < 1) continue;
 			let start = moment(line.start, "HH:mm");
 			let end = moment(line.end, "HH:mm");
-			if(start.isAfter(end)) start.substract(24*60*60*1000);
+			if(start.isAfter(end)) start.subtract(24*60*60*1000);
 			let length = end - start;
 			total += length;
 			if(line.tasks.length > 0)
@@ -126,21 +126,42 @@ export const section = {
 		const logText = log.stringify(section.log);
 		const reportText = report.generate(section.log);
 		if(reportText)
-			ret += `\n\n<!-- report -->\n${reportText}`;
+			ret += `\n\n#### report\n<!-- report -->\n${reportText}`;
 		if(logText)
-			ret += `\n\n<!-- log -->\n${logText}`;
+			ret += `\n\n#### log\n<!-- log -->\n${logText}`;
 		return ret;
 	},
 };
 export const activitySections = {
 	marker: null,
 	regex: null,
+	attrRegex: /(\w+)=(\S+)/gs,
 	init: function(marker) {
 		this.marker = marker;
-		this.regex = new RegExp(`<!-- ${this.marker} -->(.+?)<!-- \\/${this.marker} -->`, 'gmus');
+		this.regex = new RegExp(`<!-- ${this.marker} (.*?)-->(.+?)<!-- \\/${this.marker} -->`, 'gmus');
 	},
 	initialized: function() {
 		return this.marker && this.regex;
+	},
+	parseAttr: function(attrString: string|null): object|null {
+		if(!attrString) return null;
+		let ret = {};
+		while((attrParts = this.attrRegex.exec(attrString)) !== null) {
+			try {
+				ret[attrParts[1]] = JSON.parse(attrParts[2]);
+			}
+			catch(e) {
+				console.log("invalid configuration:", attrParts);
+			}
+		}
+		if(ret.maxInterval && isNaN(ret.maxInterval))
+			ret.maxInterval = 24*60; // без прерываний, целый день
+		
+		if(ret.minInterval && isNaN(ret.minInterval))
+			delete ret.minInterval; // загрузить из дефолтных настроек
+		
+		// @todo: проверка остальных свойств
+		return ret;
 	},
 	parseDocument: function(contents:string): object|false {
 		if(!this.regex) return false;
@@ -149,13 +170,16 @@ export const activitySections = {
 		while((sectionParts = this.regex.exec(contents)) !== null) {
 			ret.push({
 				outer: sectionParts[0],
-				inner: sectionParts[1],
+				attr: this.parseAttr(sectionParts[1]),
+				attrText: sectionParts[1],
+				inner: sectionParts[2],
 			});
 		}
 		return ret;
 	},
-	wrapSection: function(sectionText: string): string {
+	stringify: function(section) {
 		if(!this.marker) return false;
-		return `<!-- ${this.marker} -->\n${sectionText}\n<!-- /${this.marker} -->`;
+		let ret = `<!-- ${this.marker} ${section.attrText}-->\n${section.inner}\n<!-- /${this.marker} -->`;
+		return ret;
 	},
 };

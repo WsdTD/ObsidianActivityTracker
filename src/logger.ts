@@ -5,7 +5,7 @@ import {section as sectionParser, activitySections as activitySectionsParser} fr
 
 
 
-function isLoggingNeeded(section, currentMoment, remainActive, settings) {
+function isLoggingNeeded(section, activeTasks, currentMoment, remainActive, settings) {
 	
 	// если логов вообще нет - надо создать первую не закрытую запись
 	if(!section.log || section.log.length === 0) return true;
@@ -22,7 +22,6 @@ function isLoggingNeeded(section, currentMoment, remainActive, settings) {
 	if(remainActive)
 	{
 		// проверяем совпадают ли таски
-		const activeTasks = section.tasks.filter(v => v.checked).map(v => v.fullname);
 		
 		//размер
 		if(activeTasks.length !== activeLog.tasks.length) return true;
@@ -32,7 +31,7 @@ function isLoggingNeeded(section, currentMoment, remainActive, settings) {
 			if(activeTasks[i] !== activeLog.tasks[i])
 				return true;
 			
-		// если последнее логирование было больше часа назад
+		// если последнее логирование было больше maxInterval минут назад
 		if(moment.duration(currentMoment.diff(moment(activeLog.start, "HH:mm"))).asMinutes() >= settings.maxInterval)
 			return true;
 	}
@@ -50,8 +49,17 @@ function updateActivitySection(text: string, remainActive: boolean, settings): s
 	let section = sectionParser.parse(text);
 	const now = moment();
 	
+	const activeTasks = section.tasks.filter(v => v.checked).map(v => v.fullname);
+	if(activeTasks.length === 0)
+	{
+		if(settings.logIfNothingSelected)
+			activeTasks.push(settings.logTextIfNothingSelected);
+		else
+			remainActive = false;
+	}
+	
 	// проверяем надо ли писать новую запись лога
-	if(!isLoggingNeeded(section, now, remainActive, settings))
+	if(!isLoggingNeeded(section, activeTasks, now, remainActive, settings))
 		return false;
 	
 	// сохраняем предыдущую запись (если она есть и открыта)
@@ -77,9 +85,6 @@ function updateActivitySection(text: string, remainActive: boolean, settings): s
 	if(remainActive)
 	{
 		// starting new section
-		const activeTasks = section.tasks.filter(v => v.checked).map(v => v.fullname);
-		if(activeTasks.length === 0)
-			activeTasks.push("ничего не выбрано");
 		section.log.push({
 			tasks: activeTasks,
 			start: now.format("HH:mm"),
@@ -122,10 +127,18 @@ export function processLogRecordsInFile(app, filePath, remainActive, settings): 
 			if(sections)
 			for(let section of sections)
 			{
-				const updated = updateActivitySection(section.inner, remainActive, settings);
+				const updated = updateActivitySection(
+					section.inner,
+					remainActive,
+					Object.assign({}, settings, section.attr || {})
+				);
 				if(updated)
 				{
-					content = content.replace(section.outer, activitySectionsParser.wrapSection(updated));
+					section.inner = updated;
+					content = content.replace(
+						section.outer,
+						activitySectionsParser.stringify(section)
+					);
 					updatedSectionsCount++;
 				}
 			}
