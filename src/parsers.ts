@@ -155,10 +155,10 @@ export const activitySections = {
 				console.log("invalid configuration:", attrParts);
 			}
 		}
-		if(ret.maxInterval && isNaN(ret.maxInterval))
+		if(typeof ret.maxInterval !== 'number')
 			ret.maxInterval = 24*60; // без прерываний, целый день
 		
-		if(ret.minInterval && isNaN(ret.minInterval))
+		if(typeof ret.minInterval !== 'number')
 			delete ret.minInterval; // загрузить из дефолтных настроек
 		
 		// @todo: проверка остальных свойств
