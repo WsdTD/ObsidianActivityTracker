@@ -40,7 +40,7 @@ class sectionProcessor
 					return true;
 				
 			// если последнее логирование было больше maxInterval минут назад
-			if(moment.duration(currentMoment.diff(moment(activeLog.start, "HH:mm"))).asMinutes() >= this.settings.maxInterval)
+			if(this.diffMinutes(activeLog.start, currentMoment) >= this.settings.maxInterval)
 				return true;
 		}
 		
@@ -48,7 +48,15 @@ class sectionProcessor
 		return false;
 	}
 	
-	update(now, remainActive): boolean {
+	diffMinutes(start, end) {
+		if(typeof start === 'string') start = moment(start, "HH:mm");
+		if(typeof end === 'string') end = moment(end, "HH:mm");
+		if(start.isAfter(end)) // на случай полночи
+			start = start.clone().subtract(24*60*60*1000);
+		return moment.duration(end.diff(start)).asMinutes();
+	}
+	
+	update(currentMoment, remainActive): boolean {
 		const activeTasks = this.data.tasks.filter(v => v.checked).map(v => v.fullname);
 		if(activeTasks.length === 0)
 		{
@@ -59,24 +67,18 @@ class sectionProcessor
 		}
 		
 		// проверяем надо ли писать новую запись лога
-		if(!this.isLoggingNeeded(activeTasks, now, remainActive))
+		if(!this.isLoggingNeeded(activeTasks, currentMoment, remainActive))
 			return false;
 		
 		// сохраняем предыдущую запись (если она есть и открыта)
 		if(this.data.log.length > 0 && !this.data.log[this.data.log.length - 1].end)
 		{
 			let activeLog = this.data.log.pop();
-			activeLog.end = now.format("HH:mm");
-			const start = moment(activeLog.start, "HH:mm");
-			if(start.isAfter(now)) // на случай полночи
-				start.subtract(24*60*60*1000);
-			
-			let durationMinutes = moment.duration(now.diff(start)).asMinutes();
-			
+			activeLog.end = currentMoment.format("HH:mm");
+			let durationMinutes = this.diffMinutes(activeLog.start, currentMoment);
 			// если интервал слишком большой, то сокращать его до максимально допустимого 
 			if(durationMinutes > this.settings.maxInterval)
-				activeLog.end = start.clone().add(this.settings.maxInterval * 60*1000).format("HH:mm");
-			
+				activeLog.end = moment(activeLog.start, "HH:mm").add(this.settings.maxInterval * 60*1000).format("HH:mm");
 			//не логировать если активность была слишком короткой
 			if(durationMinutes >= this.settings.minInterval)
 				this.data.log.push(activeLog);
@@ -87,7 +89,7 @@ class sectionProcessor
 			// starting new task record
 			this.data.log.push({
 				tasks: activeTasks,
-				start: now.format("HH:mm"),
+				start: currentMoment.format("HH:mm"),
 				end: false,
 			});
 		}
