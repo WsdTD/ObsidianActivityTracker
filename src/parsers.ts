@@ -126,7 +126,7 @@ export const section = {
 		const logText = log.stringify(section.log);
 		const reportText = report.generate(section.log);
 		if(reportText)
-			ret += `\n\n#### report\n<!-- report -->\n${reportText}`;
+			ret += `\n\n#### report\n<!-- report -->\n\n${reportText}`;
 		if(logText)
 			ret += `\n\n#### log\n<!-- log -->\n${logText}`;
 		return ret;
